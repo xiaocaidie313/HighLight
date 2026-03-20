@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Highlight 精读模式</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="hl-ext-popup-body">
+    <main class="hl-ext-popup">
+      <h1 class="hl-ext-popup__title">Highlight</h1>
+      <section class="hl-ext-popup__section">
+        <label class="hl-ext-toggle">
+          <input id="enable-toggle" type="checkbox" class="hl-ext-toggle__input" />
+          <span class="hl-ext-toggle__slider"></span>
+          <span class="hl-ext-toggle__label">启用高亮</span>
+        </label>
+        <p class="hl-ext-popup__hint">开启后，划选文本将自动高亮。</p>
+      </section>
+      <section class="hl-ext-popup__section">
+        <label class="hl-ext-toggle">
+          <input id="reading-toggle" type="checkbox" class="hl-ext-toggle__input" />
+          <span class="hl-ext-toggle__slider"></span>
+          <span class="hl-ext-toggle__label">精读模式</span>
+        </label>
+        <p class="hl-ext-popup__hint">开启后，页面将突出显示你划选的高亮内容。</p>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+  </html>
+
