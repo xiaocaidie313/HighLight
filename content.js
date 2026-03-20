@@ -4,8 +4,36 @@
 // 2. 将高亮信息持久化到 chrome.storage.local
 // 3. 在页面加载时恢复历史高亮
 // 4. 响应精读模式开关，控制页面展示样式
+// import { getCurrentConfig } from "./popup.js";
 
 const HL_CONFIG_KEY = "config:v1";
+
+// 标记扩展上下文是否有效
+let extensionContextValid = true;
+
+// 检查扩展上下文是否有效
+function checkExtensionContext() {
+  try {
+    // 尝试访问 chrome.runtime，如果失败说明上下文已失效
+    if (!chrome || !chrome.runtime) {
+      extensionContextValid = false;
+      return false;
+    }
+    // 尝试一个简单的 API 调用
+    chrome.runtime.getManifest();
+    return true;
+  } catch (e) {
+    extensionContextValid = false;
+    console.log("[Highlight] 扩展上下文已失效，停止执行");
+    return false;
+  }
+}
+
+// 在所有关键操作前检查上下文
+function isExtensionValid() {
+  if (!extensionContextValid) return false;
+  return checkExtensionContext();
+}
 
 let currentConfig = {
   highlightEnabled: true,
@@ -46,20 +74,29 @@ function nowIso() {
 
 /**
  * 检查一个 Range 内是否已经包含高亮
+ * 在整个选区内搜索所有高亮标记
  */
 function rangeContainsExistingHighlight(range) {
   try {
-    const ancestor = range.commonAncestorContainer;
-    const parent = ancestor.nodeType === Node.TEXT_NODE ? ancestor.parentElement : ancestor;
+    // 检查 1：选区的起始或结束节点是否在某个 mark 内部
+    const startInMark = isNodeInsideMark(range.startContainer);
+    const endInMark = isNodeInsideMark(range.endContainer);
     
-    if (!parent) return false;
+    if (startInMark || endInMark) {
+      console.log("[Highlight] 检测到选区在已有 mark 内部，跳过");
+      return true;
+    }
+
+    // 检查 2：获取整个文档中所有的高亮标记，检查是否有交集
+    const allMarks = document.querySelectorAll('mark.hl-ext-mark');
     
-    const marksInRange = parent.querySelectorAll('mark.hl-ext-mark');
-    for (const mark of marksInRange) {
+    for (const mark of allMarks) {
       const markRange = document.createRange();
-      markRange.selectNodeContents(mark);
+      markRange.selectNode(mark);
       
-      if (range.isPointInRange(mark, 0) || range.intersectsNode(mark)) {
+      // 检查当前 range 是否与已有高亮有交集
+      if (rangesIntersect(range, markRange)) {
+        console.log("[Highlight] 检测到选区与已有 mark 有交集，跳过");
         return true;
       }
     }
@@ -72,12 +109,45 @@ function rangeContainsExistingHighlight(range) {
 }
 
 /**
+ * 检查节点是否在一个 mark.hl-ext-mark 元素内部
+ */
+function isNodeInsideMark(node) {
+  let current = node;
+  while (current) {
+    if (current.nodeType === Node.ELEMENT_NODE && 
+        current.classList && 
+        current.classList.contains('hl-ext-mark')) {
+      return true;
+    }
+    current = current.parentNode;
+  }
+  return false;
+}
+
+/**
+ * 判断两个 Range 是否有交集
+ */
+function rangesIntersect(range1, range2) {
+  // range1 的结束在 range2 的开始之前 → 不相交
+  if (range1.compareBoundaryPoints(Range.END_TO_START, range2) >= 0) {
+    return false;
+  }
+  // range1 的开始在 range2 的结束之后 → 不相交
+  if (range1.compareBoundaryPoints(Range.START_TO_END, range2) <= 0) {
+    return false;
+  }
+  // 其他情况都是相交的
+  return true;
+}
+
+/**
  * 在给定的 Range 周围创建 <mark> 元素。
  * 首先尝试使用 surroundContents，如果失败则使用更安全的方法。
  */
 function wrapRangeWithMark(range, highlightId) {
   const mark = document.createElement("mark");
   mark.className = "hl-ext-mark";
+  // 特性 属性
   mark.dataset.highlightId = highlightId;
   mark.setAttribute("role", "mark");
   mark.setAttribute("aria-label", "Highlight");
@@ -93,6 +163,7 @@ function wrapRangeWithMark(range, highlightId) {
 
 /**
  * 更安全的 Range 包裹方法，处理复杂的 DOM 结构
+ * 使用 TreeWalker 提取范围内的所有纯文本节点，逐个套上 <mark> 标签
  */
 function safeWrapRange(range, mark) {
   const startContainer = range.startContainer;
@@ -100,34 +171,129 @@ function safeWrapRange(range, mark) {
   const startOffset = range.startOffset;
   const endOffset = range.endOffset;
 
+  // 单个文本节点的情况，直接处理
   if (startContainer === endContainer && startContainer.nodeType === Node.TEXT_NODE) {
-    const textNode = startContainer;
-    const text = textNode.nodeValue;
-    
-    const beforeText = text.substring(0, startOffset);
-    const middleText = text.substring(startOffset, endOffset);
-    const afterText = text.substring(endOffset);
-    
-    const beforeNode = document.createTextNode(beforeText);
-    const afterNode = document.createTextNode(afterText);
-    
-    mark.textContent = middleText;
-    
-    const parent = textNode.parentNode;
-    parent.insertBefore(beforeNode, textNode);
-    parent.insertBefore(mark, textNode);
-    parent.insertBefore(afterNode, textNode);
-    parent.removeChild(textNode);
-    
-    return mark;
+    return wrapTextNode(startContainer, startOffset, endOffset, mark);
   }
 
-  const fragment = range.cloneContents();
-  range.deleteContents();
-  mark.appendChild(fragment);
-  range.insertNode(mark);
-  
+  // 使用 TreeWalker 提取范围内的所有纯文本节点
+  const textNodes = getTextNodesInRange(range);
+
+  // 逐个处理每个文本节点
+  textNodes.forEach((textNode) => {
+    let nodeStart = 0;
+    let nodeEnd = textNode.length;
+
+    // 调整第一个和最后一个节点的范围
+    if (textNode === startContainer) {
+      nodeStart = startOffset;
+    }
+    if (textNode === endContainer) {
+      nodeEnd = endOffset;
+    }
+
+    // 如果没有选中任何内容，跳过
+    if (nodeStart >= nodeEnd) return;
+
+    // 为每个文本节点创建新的 mark 元素
+    const nodeMark = document.createElement("mark");
+    nodeMark.className = mark.className;
+    nodeMark.dataset.highlightId = mark.dataset.highlightId;
+    nodeMark.setAttribute("role", mark.getAttribute("role"));
+    nodeMark.setAttribute("aria-label", mark.getAttribute("aria-label"));
+
+    // 如果 wrapTextNode 返回 null（只选中了空白），就不处理
+    wrapTextNode(textNode, nodeStart, nodeEnd, nodeMark);
+  });
+
   return mark;
+}
+
+/**
+ * 使用 TreeWalker 获取 Range 内的所有纯文本节点
+ * 过滤掉纯空白/换行符的节点
+ */
+function getTextNodesInRange(range) {
+  const textNodes = [];
+  const walker = document.createTreeWalker(
+    range.commonAncestorContainer,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let node;
+  while ((node = walker.nextNode())) {
+    // 过滤只包含空白字符的节点
+    if (!hasVisibleText(node)) {
+      continue;
+    }
+    
+    if (isNodeInRange(node, range)) {
+      textNodes.push(node);
+    }
+  }
+
+  return textNodes;
+}
+
+/**
+ * 检查文本节点是否包含可见内容（非纯空白）
+ */
+function hasVisibleText(textNode) {
+  const text = textNode.nodeValue || "";
+  // 检查是否只包含空白字符（空格、制表符、换行符、回车符等）
+  return text.trim().length > 0;
+}
+
+/**
+ * 判断节点是否在 Range 范围内
+ */
+function isNodeInRange(node, range) {
+  const nodeRange = document.createRange();
+  nodeRange.selectNodeContents(node);
+  
+  // 检查是否有交集
+  return !(range.compareBoundaryPoints(Range.END_TO_START, nodeRange) > 0 ||
+           range.compareBoundaryPoints(Range.START_TO_END, nodeRange) < 0);
+}
+
+/**
+ * 包裹单个文本节点的指定范围
+ * 优化空白字符处理
+ */
+function wrapTextNode(textNode, startOffset, endOffset, markElement) {
+  const fullText = textNode.nodeValue;
+  const beforeText = fullText.substring(0, startOffset);
+  const middleText = fullText.substring(startOffset, endOffset);
+  const afterText = fullText.substring(endOffset);
+
+  // 检查选中的文本是否只包含空白字符
+  const middleTextTrimmed = middleText.trim();
+  if (middleTextTrimmed.length === 0) {
+    return null;
+  }
+
+  markElement.textContent = middleText;
+
+  const parent = textNode.parentNode;
+  let currentNode = textNode;
+
+  if (beforeText) {
+    const beforeNode = document.createTextNode(beforeText);
+    parent.insertBefore(beforeNode, currentNode);
+    currentNode = beforeNode.nextSibling;
+  }
+
+  parent.insertBefore(markElement, currentNode);
+
+  if (afterText) {
+    const afterNode = document.createTextNode(afterText);
+    parent.insertBefore(afterNode, markElement.nextSibling);
+  }
+
+  parent.removeChild(textNode);
+
+  return markElement;
 }
 
 /**
@@ -191,37 +357,85 @@ function applyHighlightByText(text, highlightId) {
 // ------- 存储操作 (直接使用 chrome.storage.local) -------
 
 function getConfig(callback) {
-  chrome.storage.local.get(HL_CONFIG_KEY, result => {
-    const config = result[HL_CONFIG_KEY] || {
-      theme: "default",
-      highlightEnabled: true,
-      readingModeEnabled: false
-    };
-    callback(config);
-  });
+  try {
+    if (!isExtensionValid()) {
+      return;
+    }
+
+    chrome.storage.local.get(HL_CONFIG_KEY, result => {
+      if (chrome.runtime.lastError) {
+        console.log("[Highlight] 配置读取失败:", chrome.runtime.lastError);
+        return;
+      }
+      const config = result[HL_CONFIG_KEY] || {
+        theme: "default",
+        highlightEnabled: true,
+        readingModeEnabled: false
+      };
+      callback(config);
+    });
+  } catch (e) {
+    console.log("[Highlight] getConfig 出错:", e);
+  }
 }
 
 function setConfig(partial, callback) {
-  getConfig(current => {
-    const next = { ...current, ...partial };
-    chrome.storage.local.set({ [HL_CONFIG_KEY]: next }, () => {
-      if (callback) callback(next);
+  try {
+    if (!isExtensionValid()) {
+      return;
+    }
+
+    getConfig(current => {
+      const next = { ...current, ...partial };
+      chrome.storage.local.set({ [HL_CONFIG_KEY]: next }, () => {
+        if (chrome.runtime.lastError) {
+          console.log("[Highlight] 配置保存失败:", chrome.runtime.lastError);
+          return;
+        }
+        if (callback) callback(next);
+      });
     });
-  });
+  } catch (e) {
+    console.log("[Highlight] setConfig 出错:", e);
+  }
 }
 
 function getPageHighlights(callback) {
-  const key = getPageHighlightsKey(location.href);
-  chrome.storage.local.get(key, result => {
-    const record = result[key] || { version: "1.0", highlights: [] };
-    callback(key, record);
-  });
+  try {
+    if (!isExtensionValid()) {
+      return;
+    }
+
+    const key = getPageHighlightsKey(location.href);
+    chrome.storage.local.get(key, result => {
+      if (chrome.runtime.lastError) {
+        console.log("[Highlight] 存储读取失败:", chrome.runtime.lastError);
+        return;
+      }
+      const record = result[key] || { version: "1.0", highlights: [] };
+      callback(key, record);
+    });
+  } catch (e) {
+    console.log("[Highlight] getPageHighlights 出错:", e);
+  }
 }
 
 function savePageHighlights(key, record, callback) {
-  chrome.storage.local.set({ [key]: record }, () => {
-    if (callback) callback();
-  });
+  try {
+    if (!isExtensionValid()) {
+      return;
+    }
+
+    chrome.storage.local.set({ [key]: record }, () => {
+      if (chrome.runtime.lastError) {
+        console.log("[Highlight] 存储保存失败:", chrome.runtime.lastError);
+        return;
+      }
+      if (callback) callback();
+    });
+  } catch (e) {
+    console.log("[Highlight] savePageHighlights 出错:", e);
+  }
 }
 
 // ------- 精读模式 -------
@@ -231,12 +445,22 @@ function applyReadingModeClass(enabled) {
 }
 
 function initReadingMode() {
+  if (!isExtensionValid()) {
+    return;
+  }
+
   getConfig(config => {
+    if (!isExtensionValid()) {
+      return;
+    }
     currentConfig = config;
     applyReadingModeClass(!!config.readingModeEnabled);
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (!isExtensionValid()) {
+      return;
+    }
     if (areaName !== "local") return;
     if (changes[HL_CONFIG_KEY]) {
       const newConfig = changes[HL_CONFIG_KEY].newValue;
@@ -289,56 +513,66 @@ function buildHighlightFromSelection(selection) {
 }
 
 function handleSelectionHighlight() {
-  console.log("[Highlight] handleSelectionHighlight 被调用");
-  
-  if (!currentConfig.highlightEnabled) {
-    console.log("[Highlight] 高亮功能未启用");
-    return;
-  }
-  
-  const selection = window.getSelection();
-  if (!selection) {
-    console.log("[Highlight] 没有 selection 对象");
-    return;
-  }
-  if (selection.isCollapsed) {
-    console.log("[Highlight] selection 已折叠（没有选中文本）");
-    return;
-  }
-  if (selection.rangeCount === 0) {
-    console.log("[Highlight] 没有 range");
-    return;
-  }
+  try {
+    // 首先检查扩展上下文是否有效
+    if (!isExtensionValid()) {
+      return;
+    }
 
-  const range = selection.getRangeAt(0);
-  if (!range || range.collapsed) {
-    console.log("[Highlight] range 无效或已折叠");
-    return;
+    console.log("[Highlight] handleSelectionHighlight 被调用");
+    
+    if (!currentConfig.highlightEnabled) {
+      console.log("[Highlight] 高亮功能未启用");
+      return;
+    }
+    
+    const selection = window.getSelection();
+    if (!selection) {
+      console.log("[Highlight] 没有 selection 对象");
+      return;
+    }
+    if (selection.isCollapsed) {
+      console.log("[Highlight] selection 已折叠（没有选中文本）");
+      return;
+    }
+    if (selection.rangeCount === 0) {
+      console.log("[Highlight] 没有 range");
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!range || range.collapsed) {
+      console.log("[Highlight] range 无效或已折叠");
+      return;
+    }
+
+    // 最终检查：在创建高亮前再检查一次是否有交集
+    if (rangeContainsExistingHighlight(range)) {
+      console.log("[Highlight] 选区内已包含高亮，跳过");
+      return;
+    }
+
+    const highlight = buildHighlightFromSelection(selection);
+    if (!highlight) {
+      console.log("[Highlight] 无法构建 highlight 对象");
+      return;
+    }
+
+    console.log("[Highlight] 创建高亮:", highlight.text);
+
+    // 先在页面上渲染高亮
+    wrapRangeWithMark(range, highlight.id);
+    selection.removeAllRanges();
+
+    // 再持久化存储
+    getPageHighlights((key, record) => {
+      record.highlights.push(highlight);
+      savePageHighlights(key, record);
+      console.log("[Highlight] 高亮已保存");
+    });
+  } catch (e) {
+    console.log("[Highlight] handleSelectionHighlight 出错:", e);
   }
-
-  if (rangeContainsExistingHighlight(range)) {
-    console.log("[Highlight] 选区内已包含高亮，跳过");
-    return;
-  }
-
-  const highlight = buildHighlightFromSelection(selection);
-  if (!highlight) {
-    console.log("[Highlight] 无法构建 highlight 对象");
-    return;
-  }
-
-  console.log("[Highlight] 创建高亮:", highlight.text);
-
-  // 先在页面上渲染高亮
-  wrapRangeWithMark(range, highlight.id);
-  selection.removeAllRanges();
-
-  // 再持久化存储
-  getPageHighlights((key, record) => {
-    record.highlights.push(highlight);
-    savePageHighlights(key, record);
-    console.log("[Highlight] 高亮已保存");
-  });
 }
 
 function initSelectionListener() {
@@ -377,9 +611,17 @@ function initSelectionListener() {
 // ------- 高亮恢复 -------
 
 function restoreHighlights() {
+  if (!isExtensionValid()) {
+    return;
+  }
+
   console.log("[Highlight] 开始恢复高亮...");
   
   const restore = () => {
+    if (!isExtensionValid()) {
+      return;
+    }
+
     getPageHighlights((key, record) => {
       const list = record.highlights || [];
       console.log(`[Highlight] 找到 ${list.length} 条历史高亮`);
@@ -403,6 +645,11 @@ function restoreHighlights() {
 // ------- 消息监听 (用于 Popup 控制精读模式) -------
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 检查扩展上下文是否有效
+  if (!isExtensionValid()) {
+    return false;
+  }
+
   if (!message || typeof message !== "object") return;
 
   if (message.type === "SET_CONFIG") {

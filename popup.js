@@ -9,19 +9,23 @@ function getConfigPopup(callback) {
       highlightEnabled: true,
       readingModeEnabled: false
     };
-    callback(config);
+    // 拿到 config 之后怎么办
+    if (callback) callback(config);
   });
 }
 
-function setConfigPopup(partial, callback) {
-  getConfigPopup(current => {
-    const next = { ...current, ...partial };
-    chrome.storage.local.set({ [HL_CONFIG_KEY_POPUP]: next }, () => {
-      if (callback) callback(next);
+// 更新设置配置 
+function setConfigPopup(partial, callback){
+  getConfigPopup(res =>{
+    const newConfig = { ...res, ...partial };
+    chrome.storage.local.set({[HL_CONFIG_KEY_POPUP]: newConfig}, () => {
+      // 应用新配置 如果有callback的话
+      if (callback) callback(newConfig);
     });
-  });
+  })
 }
 
+// 注入配置到当前标签页
 function sendConfigToActiveTab(config) {
   chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
     const tab = tabs && tabs[0];
@@ -46,7 +50,7 @@ function initPopup() {
 
   // 初始化时从 storage 读取状态
   getConfigPopup(config => {
-    enableToggle.checked = !!config.highlightEnabled;
+    enableToggle.checked = Boolean(config.highlightEnabled);
     readingToggle.checked = !!config.readingModeEnabled;
   });
 
