@@ -1,8 +1,8 @@
-/* Highlight 插件 MVP 样式 */
+/* Highlight 插件：弹窗 + 页面内高亮与面板（配色为早期黄/灰方案） */
 
-/* 页面内高亮样式 */
+/* 页面内高亮（默认黄；其他颜色见 hl-ext-mark--*） */
 mark.hl-ext-mark {
-  background-color: #ffeb3b !important; /* 更亮的黄色，提高可见性 */
+  background-color: #ffeb3b !important;
   color: #000 !important;
   padding: 2px 4px;
   border-radius: 3px;
@@ -11,15 +11,34 @@ mark.hl-ext-mark {
   z-index: 9999;
 }
 
-/* 精读模式：弱化未高亮内容，仅突出高亮区域。
- * 注意：此实现是安全的视觉降噪，而不是严格意义上的“隐藏 DOM”。
- */
-html.hl-ext-reading-mode-on body {
-  transition: filter 0.2s ease, opacity 0.2s ease;
+mark.hl-ext-mark.hl-ext-mark--green {
+  background-color: #6ee7b7 !important;
+  color: #064e3b !important;
 }
 
-html.hl-ext-reading-mode-on body * {
-  opacity: 0.18;
+mark.hl-ext-mark.hl-ext-mark--blue {
+  background-color: #93c5fd !important;
+  color: #1e3a8a !important;
+}
+
+mark.hl-ext-mark.hl-ext-mark--pink {
+  background-color: #f9a8d4 !important;
+  color: #831843 !important;
+}
+
+mark.hl-ext-mark.hl-ext-mark--orange {
+  background-color: #fdba74 !important;
+  color: #7c2d12 !important;
+}
+
+mark.hl-ext-mark.hl-ext-mark--purple {
+  background-color: #c4b5fd !important;
+  color: #3730a3 !important;
+}
+
+html.hl-ext-reading-mode-on .hl-ext-reading-dim {
+  opacity: 0.22 !important;
+  transition: opacity 0.2s ease;
 }
 
 html.hl-ext-reading-mode-on mark.hl-ext-mark,
@@ -27,23 +46,43 @@ html.hl-ext-reading-mode-on mark.hl-ext-mark * {
   opacity: 1 !important;
 }
 
-/* Popup 基础样式 */
+/* 精读模式：页面内「本页高亮」浮层不受 .hl-ext-reading-dim 与父级透明度影响 */
+html.hl-ext-reading-mode-on #hl-ext-highlight-shell {
+  opacity: 1 !important;
+  filter: none !important;
+  isolation: isolate;
+}
+
+html.hl-ext-reading-mode-on #hl-ext-highlight-shell * {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+html.hl-ext-reading-mode-on #hl-ext-highlight-shell .hl-ext-reading-dim {
+  opacity: 1 !important;
+}
+
+/* ---------- 扩展工具栏弹窗（普通白底，与 popup.html 结构一致） ---------- */
 .hl-ext-popup-body {
   min-width: 260px;
   margin: 0;
-  padding: 12px 16px;
+  padding: 12px 16px 14px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #fff;
+  color: #1a1a1a;
 }
 
 .hl-ext-popup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .hl-ext-popup__title {
-  margin: 0 0 4px 0;
+  margin: 0 0 2px 0;
   font-size: 16px;
+  font-weight: 600;
+  color: #000;
 }
 
 .hl-ext-popup__section {
@@ -55,25 +94,118 @@ html.hl-ext-reading-mode-on mark.hl-ext-mark * {
 .hl-ext-popup__hint {
   margin: 0;
   font-size: 12px;
+  line-height: 1.4;
   color: #666;
 }
 
-/* 简单的开关样式 */
+.hl-ext-popup__hint.hl-ext-popup__hint--ok {
+  color: #2e7d32;
+}
+
+.hl-ext-popup__hint.hl-ext-popup__hint--err {
+  color: #c62828;
+}
+
+.hl-ext-popup__label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.hl-ext-popup__colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hl-ext-popup__color-opt {
+  position: relative;
+  cursor: pointer;
+}
+
+.hl-ext-popup__color-opt input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.hl-ext-popup__color-opt input:focus-visible + .hl-ext-popup__color-swatch {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
+}
+
+.hl-ext-popup__color-swatch {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.hl-ext-popup__color-opt:hover .hl-ext-popup__color-swatch {
+  transform: scale(1.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.hl-ext-popup__color-opt input:checked + .hl-ext-popup__color-swatch {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2196f3;
+}
+
+.hl-ext-popup__color-swatch--yellow {
+  background: #ffeb3b;
+}
+
+.hl-ext-popup__color-swatch--green {
+  background: #6ee7b7;
+}
+
+.hl-ext-popup__color-swatch--blue {
+  background: #93c5fd;
+}
+
+.hl-ext-popup__color-swatch--pink {
+  background: #f9a8d4;
+}
+
+.hl-ext-popup__color-swatch--orange {
+  background: #fdba74;
+}
+
+.hl-ext-popup__color-swatch--purple {
+  background: #c4b5fd;
+}
+
+/* 开关：滑块在左，文案在右（与 label 内 DOM 顺序一致） */
 .hl-ext-toggle {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
-  gap: 8px;
+  gap: 10px;
 }
 
 .hl-ext-toggle__input {
   position: absolute;
   opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
   pointer-events: none;
+}
+
+.hl-ext-toggle__input:focus-visible + .hl-ext-toggle__slider {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
 }
 
 .hl-ext-toggle__slider {
   position: relative;
+  flex-shrink: 0;
   width: 36px;
   height: 20px;
   background: #ccc;
@@ -106,3 +238,380 @@ html.hl-ext-reading-mode-on mark.hl-ext-mark * {
   font-size: 14px;
 }
 
+.hl-ext-popup__btn {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #ffeb3b;
+  color: #1a1a1a;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hl-ext-popup__btn:hover {
+  filter: brightness(1.03);
+}
+
+/* ---------- 页面内：本页高亮浮层（与工具栏弹窗一致：白底、灰字、黄点缀） ---------- */
+.hl-ext-highlight-shell {
+  all: initial;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #0a0a0a;
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+.hl-ext-highlight-shell *,
+.hl-ext-highlight-shell *::before,
+.hl-ext-highlight-shell *::after {
+  box-sizing: border-box;
+}
+
+.hl-ext-highlight-panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(460px, 70vh);
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  position: fixed;
+  right: 14px;
+  bottom: 86px;
+  left: auto;
+  top: auto;
+}
+
+.hl-ext-highlight-panel--collapsed .hl-ext-highlight-panel__body {
+  display: none;
+}
+
+.hl-ext-highlight-panel--collapsed {
+  height: auto;
+  max-height: none;
+}
+
+.hl-ext-highlight-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 12px 12px 14px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.hl-ext-highlight-panel__header:active {
+  cursor: grabbing;
+}
+
+.hl-ext-highlight-panel__header-brand {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #ffeb3b;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.hl-ext-highlight-panel__header-icon {
+  width: 24px;
+  height: 24px;
+  color: #1a1a1a;
+  display: block;
+}
+
+.hl-ext-highlight-panel__header-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+}
+
+.hl-ext-highlight-panel__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  color: #000;
+  line-height: 1.2;
+}
+
+.hl-ext-highlight-panel__subtitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.hl-ext-highlight-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.hl-ext-highlight-panel__count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #1a1a1a;
+  background: #ffeb3b;
+  padding: 5px 10px;
+  border-radius: 999px;
+  min-width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1.2;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.hl-ext-highlight-panel__btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #444;
+  line-height: 1;
+  box-sizing: border-box;
+  background: #f5f5f5;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hl-ext-highlight-panel__btn:hover {
+  background: #eee;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #000;
+}
+
+.hl-ext-highlight-panel__btn:active {
+  background: #e8e8e8;
+}
+
+.hl-ext-highlight-panel__btn:focus-visible {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
+}
+
+.hl-ext-highlight-panel__btn--close:hover {
+  background: rgba(198, 40, 40, 0.08);
+  border-color: rgba(198, 40, 40, 0.25);
+  color: #c62828;
+}
+
+.hl-ext-highlight-panel__collapse-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.22s ease;
+}
+
+.hl-ext-highlight-panel__collapse-icon svg {
+  display: block;
+}
+
+.hl-ext-highlight-panel--collapsed .hl-ext-highlight-panel__collapse-icon {
+  transform: rotate(-90deg);
+}
+
+.hl-ext-highlight-panel__body {
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+}
+
+/* 滚动直接加在 ul：不依赖父级确定高度，避免 flex:1 + height:auto 时列表区塌缩 */
+.hl-ext-highlight-panel__list {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px;
+  gap: 8px;
+  max-height: min(360px, 52vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hl-ext-highlight-panel__list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.hl-ext-highlight-panel__list::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+.hl-ext-highlight-panel__list::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 4px;
+}
+
+.hl-ext-highlight-panel__item {
+  all: unset;
+  display: block;
+  position: relative;
+  flex-shrink: 0;
+  padding: 12px 14px 12px 16px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  color: #0a0a0a;
+  text-align: left;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.hl-ext-highlight-panel__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  background: #ffeb3b;
+}
+
+.hl-ext-highlight-panel__item[data-hl-color="green"]::before {
+  background: #6ee7b7;
+}
+
+.hl-ext-highlight-panel__item[data-hl-color="blue"]::before {
+  background: #93c5fd;
+}
+
+.hl-ext-highlight-panel__item[data-hl-color="pink"]::before {
+  background: #f9a8d4;
+}
+
+.hl-ext-highlight-panel__item[data-hl-color="orange"]::before {
+  background: #fdba74;
+}
+
+.hl-ext-highlight-panel__item[data-hl-color="purple"]::before {
+  background: #c4b5fd;
+}
+
+.hl-ext-highlight-panel__item:hover {
+  border-color: #94a3b8;
+  background: #fffbeb;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.hl-ext-highlight-panel__item:active {
+  background: #fef3c7;
+}
+
+.hl-ext-highlight-panel__empty {
+  flex-shrink: 0;
+  margin: 12px;
+  padding: 28px 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 500;
+  color: #475569;
+  text-align: center;
+  background: #fff;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.hl-ext-highlight-shell.hl-ext-highlight-shell--panel-hidden .hl-ext-highlight-panel {
+  display: none;
+}
+
+.hl-ext-highlight-reopen {
+  all: unset;
+  pointer-events: auto;
+  position: fixed;
+  right: 14px;
+  bottom: 86px;
+  z-index: 2147483000;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #ffeb3b;
+  color: #1a1a1a;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: filter 0.15s ease, transform 0.12s ease;
+}
+
+.hl-ext-highlight-reopen:hover {
+  filter: brightness(1.03);
+}
+
+.hl-ext-highlight-reopen:active {
+  transform: scale(0.97);
+}
+
+.hl-ext-highlight-reopen {
+  display: none;
+}
+
+.hl-ext-highlight-shell.hl-ext-highlight-shell--panel-hidden .hl-ext-highlight-reopen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes hl-ext-highlight-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 235, 59, 0.85);
+  }
+  40% {
+    box-shadow: 0 0 0 8px rgba(255, 235, 59, 0.35);
+  }
+  100% {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+}
+
+mark.hl-ext-mark.hl-ext-highlight-flash-pulse {
+  animation: hl-ext-highlight-flash 0.75s ease-out 1;
+}

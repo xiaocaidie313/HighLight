@@ -21,8 +21,10 @@
       "matches": [
         "https://aime.com/*",
         "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
         "https://www.doubao.com/*",
         "https://aime.bytedance.net/*"
+
       ],
       "js": ["content.js"],
       "css": ["styles.css"],

@@ -17,6 +17,36 @@
         <p class="hl-ext-popup__hint">开启后，划选文本将自动高亮。</p>
       </section>
       <section class="hl-ext-popup__section">
+        <p class="hl-ext-popup__label">高亮颜色</p>
+        <div id="highlight-colors" class="hl-ext-popup__colors" role="radiogroup" aria-label="高亮颜色">
+          <label class="hl-ext-popup__color-opt" title="黄色">
+            <input type="radio" name="hl-highlight-color" value="yellow" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--yellow" aria-hidden="true"></span>
+          </label>
+          <label class="hl-ext-popup__color-opt" title="绿色">
+            <input type="radio" name="hl-highlight-color" value="green" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--green" aria-hidden="true"></span>
+          </label>
+          <label class="hl-ext-popup__color-opt" title="蓝色">
+            <input type="radio" name="hl-highlight-color" value="blue" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--blue" aria-hidden="true"></span>
+          </label>
+          <label class="hl-ext-popup__color-opt" title="粉色">
+            <input type="radio" name="hl-highlight-color" value="pink" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--pink" aria-hidden="true"></span>
+          </label>
+          <label class="hl-ext-popup__color-opt" title="橙色">
+            <input type="radio" name="hl-highlight-color" value="orange" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--orange" aria-hidden="true"></span>
+          </label>
+          <label class="hl-ext-popup__color-opt" title="紫色">
+            <input type="radio" name="hl-highlight-color" value="purple" />
+            <span class="hl-ext-popup__color-swatch hl-ext-popup__color-swatch--purple" aria-hidden="true"></span>
+          </label>
+        </div>
+        <p class="hl-ext-popup__hint">仅影响接下来新划选的高亮；已有高亮保持创建时的颜色。</p>
+      </section>
+      <section class="hl-ext-popup__section">
         <label class="hl-ext-toggle">
           <input id="reading-toggle" type="checkbox" class="hl-ext-toggle__input" />
           <span class="hl-ext-toggle__slider"></span>
