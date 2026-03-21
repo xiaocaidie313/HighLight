@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Highlight (MVP)",
   "version": "0.1.0",
-  "description": "Highlight text on AI chat pages and enable focused reading mode.",
+  "description": "Highlight text on any webpage and enable focused reading mode.",
 
   "permissions": [
     "storage",
@@ -10,21 +10,13 @@
   ],
 
   "host_permissions": [
-    "https://aime.com/*",
-    "https://chat.openai.com/*",
-    "https://www.doubao.com/*",
-    "https://aime.bytedance.net/*"
- ],
+    "<all_urls>"
+  ],
 
   "content_scripts": [
     {
       "matches": [
-        "https://aime.com/*",
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*",
-        "https://www.doubao.com/*",
-        "https://aime.bytedance.net/*"
-
+        "<all_urls>"
       ],
       "js": ["content.js"],
       "css": ["styles.css"],

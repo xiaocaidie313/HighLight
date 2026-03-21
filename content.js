@@ -1251,42 +1251,6 @@ function registerMessageHandlers() {
   });
 }
 
-function isDoubaoHost() {
-  try {
-    const h = window.location.hostname || "";
-    return h === "doubao.com" || h.endsWith(".doubao.com");
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * 豆包对话区常在子域 iframe（如 pc.doubao.com）；仅顶层 matches 时脚本进不去 iframe。
- * manifest 对豆包使用 all_frames:true 后，顶层壳页与 iframe 都会注入：此处跳过「含豆包子域 iframe 的顶层」，
- * 避免双面板、sendMessage 多帧抢答；纯顶层 SPA（无此类 iframe）仍正常执行。
- */
-function shouldRunHighlightInThisFrame() {
-  try {
-    if (!isDoubaoHost()) return true;
-    if (window.self !== window.top) return true;
-    const frames = document.querySelectorAll("iframe[src]");
-    for (let i = 0; i < frames.length; i++) {
-      try {
-        const u = new URL(frames[i].src, location.href);
-        const host = u.hostname || "";
-        if (host === "doubao.com" || host.endsWith(".doubao.com")) {
-          return false;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-    }
-    return true;
-  } catch (_) {
-    return true;
-  }
-}
-
 // ------- 初始化 -------
 
 function init() {
@@ -1297,9 +1261,6 @@ function init() {
 }
 
 function bootHighlightExtension() {
-  if (!shouldRunHighlightInThisFrame()) {
-    return;
-  }
   registerMessageHandlers();
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

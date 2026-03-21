@@ -83,7 +83,7 @@ function sendOpenHighlightsPanelToActiveTab() {
       if (chrome.runtime.lastError) {
         if (hint) {
           hint.textContent =
-            "无法打开：请切换到已支持站点（如 ChatGPT、豆包）的标签页后再试。";
+            "无法打开：请在本页刷新后重试，或确认当前为可注入脚本的普通网页（部分内置页、PDF 等不支持）。";
           hint.classList.remove("hl-ext-popup__hint--ok");
           hint.classList.add("hl-ext-popup__hint--err");
         }
