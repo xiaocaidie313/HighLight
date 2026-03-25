@@ -214,6 +214,228 @@ function rangesIntersect(range1, range2) {
   return true;
 }
 
+/** 折叠为文档中一点，用于判断两个 Range 是否同边界 */
+function hlCollapsedPoint(container, offset) {
+  const r = document.createRange();
+  r.setStart(container, offset);
+  r.collapse(true);
+  return r;
+}
+
+function hlCollapsedAtMarkEnd(mark) {
+  const r = document.createRange();
+  r.selectNodeContents(mark);
+  r.collapse(false);
+  return r;
+}
+
+function hlCollapsedAtMarkStart(mark) {
+  const r = document.createRange();
+  r.selectNodeContents(mark);
+  r.collapse(true);
+  return r;
+}
+
+function hlRangeBoundariesEqual(a, b) {
+  try {
+    return a.compareBoundaryPoints(Range.START_TO_START, b) === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function hlMarkMatchesColor(mark, colorKey) {
+  return normalizeHighlightColorKey(mark.dataset.hlColor) === normalizeHighlightColorKey(colorKey);
+}
+
+function hlFindMarkEndingWhereRangeStarts(range, colorKey) {
+  const at = hlCollapsedPoint(range.startContainer, range.startOffset);
+  for (const mark of document.querySelectorAll("mark.hl-ext-mark")) {
+    if (mark.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) continue;
+    if (!hlMarkMatchesColor(mark, colorKey)) continue;
+    if (hlRangeBoundariesEqual(hlCollapsedAtMarkEnd(mark), at)) {
+      return mark;
+    }
+  }
+  return null;
+}
+
+function hlFindMarkStartingWhereRangeEnds(range, colorKey) {
+  const at = hlCollapsedPoint(range.endContainer, range.endOffset);
+  for (const mark of document.querySelectorAll("mark.hl-ext-mark")) {
+    if (mark.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) continue;
+    if (!hlMarkMatchesColor(mark, colorKey)) continue;
+    if (hlRangeBoundariesEqual(hlCollapsedAtMarkStart(mark), at)) {
+      return mark;
+    }
+  }
+  return null;
+}
+
+/**
+ * 新选区与已有同色 mark 在文档中紧挨（无间隙）时合并为一条：DOM 扩写 + 存储只保留一条记录。
+ * @returns {boolean} 是否已处理（true 则调用方勿再 wrap）
+ */
+function tryMergeAdjacentSameColorHighlight(range, highlight, onSaved) {
+  const colorKey = highlight.color;
+  const leftMark = hlFindMarkEndingWhereRangeStarts(range, colorKey);
+  const rightMark = hlFindMarkStartingWhereRangeEnds(range, colorKey);
+  const mid = range.toString();
+
+  const finish = (keepId, removeId, newExact) => {
+    getPageHighlights((key, record) => {
+      let list = record.highlights || [];
+      if (removeId && removeId !== keepId) {
+        list = list.filter(h => h.id !== removeId);
+      }
+      const entry = list.find(h => h.id === keepId);
+      if (entry) {
+        entry.text = newExact;
+        entry.updatedAt = nowIso();
+        if (entry.anchor) {
+          entry.anchor.exact = newExact;
+        }
+      }
+      record.highlights = list;
+      savePageHighlights(key, record, () => {
+        if (onSaved) onSaved();
+      });
+    });
+  };
+
+  if (leftMark && rightMark && leftMark !== rightMark) {
+    range.deleteContents();
+    const rid = (rightMark.dataset.highlightId || "").trim();
+    const combined = leftMark.textContent + mid + rightMark.textContent;
+    leftMark.textContent = combined;
+    rightMark.remove();
+    hlConsolidateMarksSameIdChain(leftMark);
+    const lid = (leftMark.dataset.highlightId || "").trim();
+    if (!lid) {
+      scheduleHighlightsPanelRefresh();
+      return true;
+    }
+    finish(lid, rid && rid !== lid ? rid : null, leftMark.textContent);
+    scheduleHighlightsPanelRefresh();
+    return true;
+  }
+
+  if (leftMark) {
+    range.deleteContents();
+    leftMark.appendChild(document.createTextNode(mid));
+    hlConsolidateMarksSameIdChain(leftMark);
+    const lid = (leftMark.dataset.highlightId || "").trim();
+    const nextText = leftMark.textContent;
+    if (!lid) {
+      scheduleHighlightsPanelRefresh();
+      return true;
+    }
+    finish(lid, null, nextText);
+    scheduleHighlightsPanelRefresh();
+    return true;
+  }
+
+  if (rightMark) {
+    range.deleteContents();
+    rightMark.insertBefore(document.createTextNode(mid), rightMark.firstChild);
+    hlConsolidateMarksSameIdChain(rightMark);
+    const rid = (rightMark.dataset.highlightId || "").trim();
+    const nextText = rightMark.textContent;
+    if (!rid) {
+      scheduleHighlightsPanelRefresh();
+      return true;
+    }
+    finish(rid, null, nextText);
+    scheduleHighlightsPanelRefresh();
+    return true;
+  }
+
+  return false;
+}
+
+/** 同一高亮 id + 同色（用于合并碎片 mark） */
+function hlSameHighlightMeta(a, b) {
+  const ida = (a.dataset.highlightId || "").trim();
+  const idb = (b.dataset.highlightId || "").trim();
+  if (!ida || ida !== idb) return false;
+  return normalizeHighlightColorKey(a.dataset.hlColor) === normalizeHighlightColorKey(b.dataset.hlColor);
+}
+
+/**
+ * 一次划词跨多个文本节点时 safeWrapRange 会生成多个相邻 <mark>（同 id），中间会有圆角/阴影分界线。
+ * 仅在「同一父节点下」沿兄弟链合并；中间只允许纯空白文本节点，绝不把未圈进的可见字并进去。
+ */
+function hlConsolidateMarksSameIdChain(mark) {
+  if (!mark || !(mark instanceof Element) || mark.tagName !== "MARK" || !mark.classList.contains("hl-ext-mark")) {
+    return mark;
+  }
+  if (mark.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) return mark;
+
+  let left = mark;
+  while (true) {
+    let p = left.previousSibling;
+    while (p && p.nodeType === Node.TEXT_NODE) {
+      const raw = p.nodeValue || "";
+      if (raw.trim() === "") {
+        const dead = p;
+        p = p.previousSibling;
+        dead.remove();
+        continue;
+      }
+      break;
+    }
+    if (!p || p.nodeType !== Node.ELEMENT_NODE || p.tagName !== "MARK" || !p.classList.contains("hl-ext-mark")) {
+      break;
+    }
+    if (p.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) break;
+    if (!hlSameHighlightMeta(p, left)) break;
+    left = p;
+  }
+
+  let cur = left;
+  mergeLoop: while (true) {
+    let n = cur.nextSibling;
+    while (n && n.nodeType === Node.TEXT_NODE) {
+      const raw = n.nodeValue || "";
+      if (raw.trim() === "") {
+        const dead = n;
+        n = n.nextSibling;
+        dead.remove();
+        continue;
+      }
+      break;
+    }
+    if (!n || n.nodeType !== Node.ELEMENT_NODE || n.tagName !== "MARK" || !n.classList.contains("hl-ext-mark")) {
+      break;
+    }
+    if (n.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) break;
+    if (!hlSameHighlightMeta(cur, n)) break;
+    cur.appendChild(document.createTextNode(n.textContent || ""));
+    n.remove();
+    continue mergeLoop;
+  }
+
+  return cur;
+}
+
+/** 页面加载后整理历史碎片（仅同一父节点下的兄弟 mark，不跨块级标签乱合并） */
+function hlConsolidateAllHighlightIdsOnPage() {
+  if (!document.body) return;
+  const ids = new Set();
+  for (const m of document.querySelectorAll("mark.hl-ext-mark")) {
+    if (m.closest(`#${HL_EXT_PANEL_SHELL_ID}`)) continue;
+    const id = (m.dataset.highlightId || "").trim();
+    if (id) ids.add(id);
+  }
+  ids.forEach(id => {
+    const first = [...document.querySelectorAll("mark.hl-ext-mark")].find(
+      m => !m.closest(`#${HL_EXT_PANEL_SHELL_ID}`) && (m.dataset.highlightId || "").trim() === id
+    );
+    if (first) hlConsolidateMarksSameIdChain(first);
+  });
+  scheduleHighlightsPanelRefresh();
+}
+
 /**
  * 在给定的 Range 周围创建 <mark> 元素。
  * 首先尝试使用 surroundContents，如果失败则使用更安全的方法。
@@ -226,13 +448,15 @@ function wrapRangeWithMark(range, highlightId, colorKey) {
   mark.setAttribute("role", "mark");
   mark.setAttribute("aria-label", "Highlight");
 
+  let result;
   try {
     range.surroundContents(mark);
-    return mark;
+    result = mark;
   } catch (e) {
     console.log("[Highlight] surroundContents 失败，使用备选方案", e);
-    return safeWrapRange(range, mark);
+    result = safeWrapRange(range, mark);
   }
+  return result ? hlConsolidateMarksSameIdChain(result) : result;
 }
 
 /**
@@ -250,29 +474,14 @@ function safeWrapRange(range, mark) {
     return wrapTextNode(startContainer, startOffset, endOffset, mark);
   }
 
-  // 使用 TreeWalker 提取范围内的所有纯文本节点
-  const textNodes = getTextNodesInRange(range);
+  const segments = getTextSegmentsInRange(range);
 
-  // 跨节点时 surroundContents 会为每段文本各建一个 mark；须返回实际插入的第一个 mark
+  // 从文档末尾往前包裹，避免先改前面的节点导致后面 Text 引用失效或误包
   let firstInserted = null;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const { node: textNode, nodeStart, nodeEnd } = segments[i];
+    if (nodeStart >= nodeEnd) continue;
 
-  // 逐个处理每个文本节点
-  textNodes.forEach((textNode) => {
-    let nodeStart = 0;
-    let nodeEnd = textNode.length;
-
-    // 调整第一个和最后一个节点的范围
-    if (textNode === startContainer) {
-      nodeStart = startOffset;
-    }
-    if (textNode === endContainer) {
-      nodeEnd = endOffset;
-    }
-
-    // 如果没有选中任何内容，跳过
-    if (nodeStart >= nodeEnd) return;
-
-    // 为每个文本节点创建新的 mark 元素
     const nodeMark = document.createElement("mark");
     nodeMark.className = mark.className;
     nodeMark.dataset.highlightId = mark.dataset.highlightId;
@@ -283,39 +492,87 @@ function safeWrapRange(range, mark) {
     nodeMark.setAttribute("aria-label", mark.getAttribute("aria-label"));
 
     const inserted = wrapTextNode(textNode, nodeStart, nodeEnd, nodeMark);
-    if (inserted && !firstInserted) {
+    if (inserted && i === 0) {
       firstInserted = inserted;
     }
-  });
+  }
 
   return firstInserted || mark;
 }
 
-/**
- * 使用 TreeWalker 获取 Range 内的所有纯文本节点
- * 过滤掉纯空白/换行符的节点
- */
-function getTextNodesInRange(range) {
-  const textNodes = [];
-  const walker = document.createTreeWalker(
-    range.commonAncestorContainer,
-    NodeFilter.SHOW_TEXT,
-    null
-  );
+function hlRangeWalkerRoot(range) {
+  const c = range.commonAncestorContainer;
+  if (c.nodeType === Node.ELEMENT_NODE) return c;
+  if (c.nodeType === Node.TEXT_NODE) return c.parentElement || document.body;
+  return document.body;
+}
 
-  let node;
-  while ((node = walker.nextNode())) {
-    // 过滤只包含空白字符的节点
-    if (!hasVisibleText(node)) {
-      continue;
+function hlTextNodeInSkippableHost(node) {
+  const p = node.parentElement;
+  if (!p || !p.closest) return false;
+  return !!(p.closest("script") || p.closest("style") || p.closest("noscript"));
+}
+
+/**
+ * 单个文本节点与选区的交集 [nodeStart, nodeEnd)；用 comparePoint 排除整段误收。
+ */
+function intersectTextNodeWithRange(node, range) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+  if (hlTextNodeInSkippableHost(node)) return null;
+  if (!hasVisibleText(node)) return null;
+
+  const len = node.length;
+  let ns;
+  let ne;
+
+  if (typeof range.comparePoint === "function") {
+    try {
+      const c0 = range.comparePoint(node, 0);
+      const cL = range.comparePoint(node, len);
+      if (cL === -1 || c0 === 1) return null;
+    } catch (e) {
+      return intersectTextNodeWithRangeLegacy(node, range);
     }
-    
-    if (isNodeInRange(node, range)) {
-      textNodes.push(node);
-    }
+    ns = range.startContainer === node ? range.startOffset : 0;
+    ne = range.endContainer === node ? range.endOffset : len;
+  } else {
+    return intersectTextNodeWithRangeLegacy(node, range);
   }
 
-  return textNodes;
+  ns = Math.max(0, Math.min(ns, len));
+  ne = Math.max(0, Math.min(ne, len));
+  if (ns >= ne) return null;
+  const slice = (node.nodeValue || "").substring(ns, ne);
+  if (!slice.trim()) return null;
+  return { node, nodeStart: ns, nodeEnd: ne };
+}
+
+function intersectTextNodeWithRangeLegacy(node, range) {
+  const len = node.length;
+  const nodeRange = document.createRange();
+  nodeRange.selectNodeContents(node);
+  if (range.compareBoundaryPoints(Range.END_TO_START, nodeRange) >= 0) return null;
+  if (range.compareBoundaryPoints(Range.START_TO_END, nodeRange) <= 0) return null;
+  const ns = range.startContainer === node ? range.startOffset : 0;
+  const ne = range.endContainer === node ? range.endOffset : len;
+  const a = Math.max(0, Math.min(ns, len));
+  const b = Math.max(0, Math.min(ne, len));
+  if (a >= b) return null;
+  const slice = (node.nodeValue || "").substring(a, b);
+  if (!slice.trim()) return null;
+  return { node, nodeStart: a, nodeEnd: b };
+}
+
+function getTextSegmentsInRange(range) {
+  const segments = [];
+  const root = hlRangeWalkerRoot(range);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let n;
+  while ((n = walker.nextNode())) {
+    const seg = intersectTextNodeWithRange(n, range);
+    if (seg) segments.push(seg);
+  }
+  return segments;
 }
 
 /**
@@ -325,18 +582,6 @@ function hasVisibleText(textNode) {
   const text = textNode.nodeValue || "";
   // 检查是否只包含空白字符（空格、制表符、换行符、回车符等）
   return text.trim().length > 0;
-}
-
-/**
- * 判断节点是否在 Range 范围内
- */
-function isNodeInRange(node, range) {
-  const nodeRange = document.createRange();
-  nodeRange.selectNodeContents(node);
-  
-  // 检查是否有交集
-  return !(range.compareBoundaryPoints(Range.END_TO_START, nodeRange) > 0 ||
-           range.compareBoundaryPoints(Range.START_TO_END, nodeRange) < 0);
 }
 
 /**
@@ -1101,7 +1346,7 @@ function handleSelectionHighlight() {
       return;
     }
 
-    const range = selection.getRangeAt(0);
+    const range = selection.getRangeAt(0).cloneRange();
     if (!range || range.collapsed) {
       console.log("[Highlight] range 无效或已折叠");
       return;
@@ -1125,6 +1370,13 @@ function handleSelectionHighlight() {
     }
 
     console.log("[Highlight] 创建高亮:", highlight.text);
+
+    // 与相邻同色块合并为一条（列表与存储均按一条计）
+    if (tryMergeAdjacentSameColorHighlight(range, highlight)) {
+      selection.removeAllRanges();
+      console.log("[Highlight] 已与相邻同色高亮合并");
+      return;
+    }
 
     // 先在页面上渲染高亮
     wrapRangeWithMark(range, highlight.id, highlight.color);
@@ -1257,6 +1509,7 @@ function init() {
   initReadingMode();
   initHighlightsPanel();
   restoreHighlights();
+  setTimeout(hlConsolidateAllHighlightIdsOnPage, 3500);
   initSelectionListener();
 }
 
