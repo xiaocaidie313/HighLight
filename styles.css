@@ -256,6 +256,27 @@ html.hl-ext-reading-mode-on #hl-ext-highlight-shell .hl-ext-reading-dim {
   filter: brightness(1.03);
 }
 
+.hl-ext-popup__btn--secondary {
+  display: inline-block;
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.hl-ext-popup__btn--secondary:hover {
+  filter: none;
+  background: #f5f5f5;
+}
+
+.hl-ext-popup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ---------- 页面内：本页高亮浮层（与工具栏弹窗一致：白底、灰字、黄点缀） ---------- */
 .hl-ext-highlight-shell {
   all: initial;

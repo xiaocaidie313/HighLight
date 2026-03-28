@@ -1,6 +1,7 @@
 // Popup 脚本：控制精读模式开关
 
 const HL_CONFIG_KEY_POPUP = "config:v1";
+const HL_HIGHLIGHT_KEY_PREFIX = "highlights:";
 
 const HL_POPUP_DEFAULT_CONFIG = {
   theme: "default",
@@ -41,6 +42,119 @@ function setConfigPopup(partial, callback) {
 }
 
 // 注入配置到当前标签页
+/** 与 content 内 getPageHighlightsKey 一致：去 hash */
+function normalizeUrlForStorage(url) {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
+function pageHighlightsStorageKey(tabUrl) {
+  return HL_HIGHLIGHT_KEY_PREFIX + normalizeUrlForStorage(tabUrl);
+}
+
+function isoStampForFilename() {
+  return new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+}
+
+function slugFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const base = (u.hostname + u.pathname).replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return (base.slice(0, 48) || "page").replace(/_+$/, "");
+  } catch (e) {
+    return "page";
+  }
+}
+
+function setExportHint(message, kind) {
+  const hint = document.getElementById("export-hint");
+  if (!hint) return;
+  hint.classList.remove("hl-ext-popup__hint--ok", "hl-ext-popup__hint--err");
+  hint.textContent = message || "";
+  if (kind === "ok") hint.classList.add("hl-ext-popup__hint--ok");
+  if (kind === "err") hint.classList.add("hl-ext-popup__hint--err");
+}
+
+function downloadJson(filename, data) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportCurrentPageHighlights() {
+  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+    const tab = tabs && tabs[0];
+    if (!tab || tab.id == null) {
+      setExportHint("没有可用的当前标签页。", "err");
+      return;
+    }
+    const tabUrl = tab.url || "";
+    if (!/^https?:/i.test(tabUrl)) {
+      setExportHint("当前页不是 http(s) 网页，无法按 URL 导出高亮。", "err");
+      return;
+    }
+
+    const key = pageHighlightsStorageKey(tabUrl);
+    chrome.storage.local.get(key, result => {
+      if (chrome.runtime.lastError) {
+        setExportHint("读取存储失败：" + chrome.runtime.lastError.message, "err");
+        return;
+      }
+      const record = result[key] || { version: "1.0", highlights: [] };
+      const n = (record.highlights && record.highlights.length) || 0;
+      const payload = {
+        format: "highlight-page-v1",
+        exportedAt: new Date().toISOString(),
+        pageUrl: tabUrl,
+        storageKey: key,
+        record
+      };
+      const name = `highlight-page_${slugFromUrl(tabUrl)}_${isoStampForFilename()}.json`;
+      downloadJson(name, payload);
+      setExportHint(`已下载 JSON（当前页 ${n} 条高亮）。`, "ok");
+    });
+  });
+}
+
+function exportAllHighlights() {
+  chrome.storage.local.get(null, items => {
+    if (chrome.runtime.lastError) {
+      setExportHint("读取存储失败：" + chrome.runtime.lastError.message, "err");
+      return;
+    }
+    const pages = {};
+    let total = 0;
+    for (const k of Object.keys(items || {})) {
+      if (k.startsWith(HL_HIGHLIGHT_KEY_PREFIX)) {
+        pages[k] = items[k];
+        const arr = items[k] && items[k].highlights;
+        total += Array.isArray(arr) ? arr.length : 0;
+      }
+    }
+    const payload = {
+      format: "highlight-backup-v1",
+      exportedAt: new Date().toISOString(),
+      app: "Highlight (MV3)",
+      config: items[HL_CONFIG_KEY_POPUP] || null,
+      pages
+    };
+    const pageCount = Object.keys(pages).length;
+    const name = `highlight-backup_${isoStampForFilename()}.json`;
+    downloadJson(name, payload);
+    setExportHint(`已下载 JSON（${pageCount} 个页面，共 ${total} 条高亮）。`, "ok");
+  });
+}
+
 function sendConfigToActiveTab(config) {
   chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
     const tab = tabs && tabs[0];
@@ -102,6 +216,8 @@ function initPopup() {
   const enableToggle = document.getElementById("enable-toggle");
   const readingToggle = document.getElementById("reading-toggle");
   const openPanelBtn = document.getElementById("open-panel-btn");
+  const exportPageBtn = document.getElementById("export-page-btn");
+  const exportAllBtn = document.getElementById("export-all-btn");
   const colorRadios = document.querySelectorAll('input[name="hl-highlight-color"]');
 
   if (!enableToggle || !readingToggle) return;
@@ -146,6 +262,13 @@ function initPopup() {
     openPanelBtn.addEventListener("click", () => {
       sendOpenHighlightsPanelToActiveTab();
     });
+  }
+
+  if (exportPageBtn) {
+    exportPageBtn.addEventListener("click", () => exportCurrentPageHighlights());
+  }
+  if (exportAllBtn) {
+    exportAllBtn.addEventListener("click", () => exportAllHighlights());
   }
 }
 
